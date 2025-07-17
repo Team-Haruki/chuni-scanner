@@ -113,7 +113,10 @@ async def option_ver(option_path: AsyncPath) -> str | None:
     try:
         major = parser.getint("Version", "VerMajor")
         minor = parser.getint("Version", "VerMinor")
-        return f"{major}.{minor}"
+        if major <= 2 or minor <= 55:
+            return f"{major}.{minor}"
+        else:
+            return None
     except (configparser.Error, ValueError):
         return None
 
@@ -144,21 +147,40 @@ async def scan_music(
                 valid_dirs[option_path] = opt_v
     await scanner_logger.info("Validated option directories.")
     await scanner_logger.info("Scanning music data...")
+    xml_tasks = []
+    c2s_tasks = []
+    xml_file_infos = []
     for valid_dir, opt_v in valid_dirs.items():
         async for file in iter_all_files(valid_dir):
             if file.name == "Music.xml":
-                try:
-                    info, diff = await asyncio.to_thread(parse_music_xml, file, opt_v)
-                    music_infos.append(info)
-                    music_diffs.append(diff)
-                    await scanner_logger.debug(f"Scanned music data: {file}")
-                except Exception as e:
-                    await scanner_logger.error(f"[Music.xml error] {file}: {e}")
+                xml_file_infos.append((file, opt_v))
             elif file.suffix == ".c2s":
-                try:
-                    chart = await c2s_analyzer(file)
-                    chart_data.append(chart)
-                except Exception as e:
-                    await scanner_logger.error(f"[C2S error] {file}: {e}")
+                c2s_tasks.append(c2s_analyzer(file))
+    for file, opt_v in xml_file_infos:
+        xml_tasks.append(asyncio.to_thread(parse_music_xml, file, opt_v))
+    results = await asyncio.gather(*xml_tasks, return_exceptions=True)
+    for i, result in enumerate(results):
+        file, _ = xml_file_infos[i]
+        if isinstance(result, Exception):
+            await scanner_logger.error(f"[Music.xml error] {file}: {result}")
+        else:
+            info, diff = result
+            music_infos.append(info)
+            music_diffs.append(diff)
+            await scanner_logger.debug(f"Scanned music data: {file}")
+
+    c2s_results = await asyncio.gather(*c2s_tasks, return_exceptions=True)
+    c2s_files = []
+    for valid_dir in valid_dirs:
+        async for file in iter_all_files(valid_dir):
+            if file.suffix == ".c2s":
+                c2s_files.append(file)
+    for i, result in enumerate(c2s_results):
+        file = c2s_files[i] if i < len(c2s_files) else None
+        if isinstance(result, Exception):
+            await scanner_logger.error(f"[C2S error] {file}: {result}")
+        else:
+            chart_data.append(result)
+
     await scanner_logger.info("Scanned music data.")
     return music_infos, music_diffs, chart_data
