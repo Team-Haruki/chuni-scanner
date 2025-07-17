@@ -63,7 +63,13 @@ def parse_music_xml(xml_path: AsyncPath, current_version: str) -> tuple[MusicInf
     release_date = parse_release_date(find_text("./releaseDate"))
 
     info = MusicInfoSchema(
-        music_id=music_id, title=title, artist=artist, category=category, version=release_version, release_date=release_date
+        music_id=music_id,
+        title=title,
+        artist=artist,
+        category=category,
+        version=release_version,
+        release_date=release_date,
+        is_deleted=False,
     )
 
     diff = MusicDifficultySchema(
@@ -120,6 +126,7 @@ async def option_ver(option_path: AsyncPath) -> str | None:
     except (configparser.Error, ValueError):
         return None
 
+
 async def iter_all_files(dir_path: AsyncPath):
     async for entry in dir_path.iterdir():
         if await entry.is_dir():
@@ -132,7 +139,7 @@ async def iter_all_files(dir_path: AsyncPath):
 async def scan_music(
     a000_path: AsyncPath, options_dir: AsyncPath
 ) -> tuple[list[MusicInfoSchema], list[MusicDifficultySchema], list[ChartDataSchema]]:
-    valid_dirs: dict[AsyncPath: str] = {}
+    valid_dirs: dict[AsyncPath:str] = {}
     music_infos: list[MusicInfoSchema] = []
     music_diffs: list[MusicDifficultySchema] = []
     chart_data: list[ChartDataSchema] = []
