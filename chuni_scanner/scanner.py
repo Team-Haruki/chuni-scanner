@@ -1,0 +1,153 @@
+import re
+import asyncio
+import configparser
+from typing import Any
+from pathlib import Path
+
+from aiopath import AsyncPath
+from datetime import datetime, date
+import xml.etree.ElementTree as xmlEt
+
+from .logger import scanner_logger
+from .schemas import MusicDifficultySchema, MusicInfoSchema, ChartDataSchema
+
+c2s_mapping = {
+    "CREATOR": "creator",
+    "BPM_DEF": "bpm",
+    "T_JUDGE_TAP": "tap_count",
+    "T_JUDGE_HLD": "hold_count",
+    "T_JUDGE_SLD": "slide_count",
+    "T_JUDGE_AIR": "air_count",
+    "T_JUDGE_FLK": "flick_count",
+    "T_JUDGE_ALL": "count",
+}
+
+
+def parse_music_xml(xml_path: AsyncPath) -> tuple[MusicInfoSchema, MusicDifficultySchema]:
+    tree = xmlEt.parse(Path(xml_path))
+    root = tree.getroot()
+
+    def find_text(path: str) -> str | None:
+        el = root.find(path)
+        return el.text if el is not None and el.text else None
+
+    def parse_release_date(raw: str | None) -> date | None:
+        if not raw or len(raw) != 8:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y%m%d").date()
+        except ValueError:
+            return None
+
+    def extract_version_tag(tag_str: str | None) -> str | None:
+        if not tag_str:
+            return None
+        match = re.search(r"(\d+)\.(\d+)", tag_str)
+        return match.group(0) if match else None
+
+    def get_fumen_level_by_type_id(type_id: int) -> float | None:
+        for fumen in root.findall("./fumens/MusicFumenData"):
+            fumen_type_id = fumen.findtext("./type/id")
+            if fumen_type_id and int(fumen_type_id) == type_id:
+                level = fumen.findtext("level") or "0"
+                decimal = fumen.findtext("levelDecimal") or "0"
+                return float(f"{level}.{decimal}")
+        return None
+
+    music_id = int(find_text("./name/id") or 0)
+    title = find_text("./name/str") or ""
+    artist = find_text("./artistName/str") or ""
+    category = find_text("./genreNames/list/StringID/str")
+    release_tag = find_text("./releaseTagName/str")
+    version = extract_version_tag(release_tag)
+    release_date = parse_release_date(find_text("./releaseDate"))
+
+    info = MusicInfoSchema(
+        music_id=music_id, title=title, artist=artist, category=category, version=version, release_date=release_date
+    )
+
+    diff = MusicDifficultySchema(
+        music_id=music_id,
+        version=version,
+        diff0_const=get_fumen_level_by_type_id(0),
+        diff1_const=get_fumen_level_by_type_id(1),
+        diff2_const=get_fumen_level_by_type_id(2),
+        diff3_const=get_fumen_level_by_type_id(3),
+        diff4_const=get_fumen_level_by_type_id(4),
+    )
+
+    return info, diff
+
+
+async def c2s_analyzer(file_path: AsyncPath) -> ChartDataSchema:
+    data: dict[str, Any] = {}
+    match = re.match(r"(\d{4})_(\d{2})\.c2s$", file_path.name)
+    if not match:
+        raise ValueError(f"Invalid c2s filename format: {file_path.name}")
+    data["music_id"] = int(match.group(1))
+    data["difficulty"] = int(match.group(2))
+    async with file_path.open("r", encoding="utf-8") as f:
+        async for line in f:
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) < 2:
+                continue
+            identifier = parts[0]
+            value = parts[1]
+            if identifier in c2s_mapping:
+                field = c2s_mapping[identifier]
+                if identifier == "BPM_DEF":
+                    data[field] = float(value.split()[0])
+                else:
+                    data[field] = value
+
+    return ChartDataSchema(**data)
+
+
+async def is_valid_option_dir(option_path: AsyncPath) -> bool:
+    config_path = option_path / "data.conf"
+    if not await config_path.is_file():
+        return False
+    content = await config_path.read_text(encoding="utf-8")
+    parser = configparser.ConfigParser()
+    parser.read_string(content)
+    try:
+        major = parser.getint("Version", "VerMajor")
+        minor = parser.getint("Version", "VerMinor")
+        return major <= 3 and minor <= 50
+    except (configparser.Error, ValueError):
+        return False
+
+
+async def scan_music(
+    a000_path: AsyncPath, options_dir: AsyncPath
+) -> tuple[list[MusicInfoSchema], list[MusicDifficultySchema], list[ChartDataSchema]]:
+    valid_dirs: list[AsyncPath] = []
+    music_infos: list[MusicInfoSchema] = []
+    music_diffs: list[MusicDifficultySchema] = []
+    chart_data: list[ChartDataSchema] = []
+    await scanner_logger.info("Validating option directories...")
+    if await is_valid_option_dir(a000_path):
+        valid_dirs.append(a000_path)
+    async for option_path in options_dir.iterdir():
+        if await option_path.is_dir():
+            if await is_valid_option_dir(option_path):
+                valid_dirs.append(option_path)
+    await scanner_logger.info("Validated option directories.")
+    await scanner_logger.info("Scanning music data...")
+    for valid_dir in valid_dirs:
+        async for file in valid_dir.rglob("*"):
+            if file.name == "Music.xml":
+                try:
+                    info, diff = await asyncio.to_thread(parse_music_xml, file)
+                    music_infos.append(info)
+                    music_diffs.append(diff)
+                except Exception as e:
+                    await scanner_logger.error(f"[Music.xml error] {file}: {e}")
+            elif file.suffix == ".c2s":
+                try:
+                    chart = await c2s_analyzer(file)
+                    chart_data.append(chart)
+                except Exception as e:
+                    await scanner_logger.error(f"[C2S error] {file}: {e}")
+    await scanner_logger.info("Scanned music data.")
+    return music_infos, music_diffs, chart_data
