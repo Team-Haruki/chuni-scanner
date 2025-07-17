@@ -65,7 +65,7 @@ keep-runtime-typing = true
 chuni-scanner = { workspace = true }
 
 [project.scripts]
-chuni-scanner = "chuni_scanner.__main__:main"  # 安装后可通过 mycli 命令调用 cli.main
+chuni-scanner = "chuni_scanner.__main__:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
