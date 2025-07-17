@@ -23,7 +23,7 @@ c2s_mapping = {
 }
 
 
-def parse_music_xml(xml_path: AsyncPath) -> tuple[MusicInfoSchema, MusicDifficultySchema]:
+def parse_music_xml(xml_path: AsyncPath, current_version: str) -> tuple[MusicInfoSchema, MusicDifficultySchema]:
     tree = xmlEt.parse(Path(xml_path))
     root = tree.getroot()
 
@@ -59,16 +59,16 @@ def parse_music_xml(xml_path: AsyncPath) -> tuple[MusicInfoSchema, MusicDifficul
     artist = find_text("./artistName/str") or ""
     category = find_text("./genreNames/list/StringID/str")
     release_tag = find_text("./releaseTagName/str")
-    version = extract_version_tag(release_tag)
+    release_version = extract_version_tag(release_tag)
     release_date = parse_release_date(find_text("./releaseDate"))
 
     info = MusicInfoSchema(
-        music_id=music_id, title=title, artist=artist, category=category, version=version, release_date=release_date
+        music_id=music_id, title=title, artist=artist, category=category, version=release_version, release_date=release_date
     )
 
     diff = MusicDifficultySchema(
         music_id=music_id,
-        version=version,
+        version=current_version,
         diff0_const=get_fumen_level_by_type_id(0),
         diff1_const=get_fumen_level_by_type_id(1),
         diff2_const=get_fumen_level_by_type_id(2),
@@ -103,42 +103,44 @@ async def c2s_analyzer(file_path: AsyncPath) -> ChartDataSchema:
     return ChartDataSchema(**data)
 
 
-async def is_valid_option_dir(option_path: AsyncPath) -> bool:
+async def option_ver(option_path: AsyncPath) -> str | None:
     config_path = option_path / "data.conf"
     if not await config_path.is_file():
-        return False
+        return None
     content = await config_path.read_text(encoding="utf-8")
     parser = configparser.ConfigParser()
     parser.read_string(content)
     try:
         major = parser.getint("Version", "VerMajor")
         minor = parser.getint("Version", "VerMinor")
-        return major <= 3 and minor <= 50
+        return f"{major}.{minor}"
     except (configparser.Error, ValueError):
-        return False
+        return None
 
 
 async def scan_music(
     a000_path: AsyncPath, options_dir: AsyncPath
 ) -> tuple[list[MusicInfoSchema], list[MusicDifficultySchema], list[ChartDataSchema]]:
-    valid_dirs: list[AsyncPath] = []
+    valid_dirs: dict[AsyncPath: str] = {}
     music_infos: list[MusicInfoSchema] = []
     music_diffs: list[MusicDifficultySchema] = []
     chart_data: list[ChartDataSchema] = []
     await scanner_logger.info("Validating option directories...")
-    if await is_valid_option_dir(a000_path):
-        valid_dirs.append(a000_path)
+    opt_v = await option_ver(a000_path)
+    if opt_v:
+        valid_dirs[a000_path] = opt_v
     async for option_path in options_dir.iterdir():
         if await option_path.is_dir():
-            if await is_valid_option_dir(option_path):
-                valid_dirs.append(option_path)
+            opt_v = await option_ver(option_path)
+            if opt_v:
+                valid_dirs[option_path] = opt_v
     await scanner_logger.info("Validated option directories.")
     await scanner_logger.info("Scanning music data...")
-    for valid_dir in valid_dirs:
+    for valid_dir, opt_v in valid_dirs.items():
         async for file in valid_dir.rglob("*"):
             if file.name == "Music.xml":
                 try:
-                    info, diff = await asyncio.to_thread(parse_music_xml, file)
+                    info, diff = await asyncio.to_thread(parse_music_xml, file, opt_v)
                     music_infos.append(info)
                     music_diffs.append(diff)
                 except Exception as e:
