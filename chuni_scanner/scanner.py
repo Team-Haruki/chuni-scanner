@@ -99,7 +99,7 @@ async def c2s_analyzer(file_path: AsyncPath) -> ChartDataSchema:
                     data[field] = float(value.split()[0])
                 else:
                     data[field] = value
-
+    await scanner_logger.debug(f"Scanned c2s data: {str(file_path)}")
     return ChartDataSchema(**data)
 
 
@@ -151,6 +151,7 @@ async def scan_music(
                     info, diff = await asyncio.to_thread(parse_music_xml, file, opt_v)
                     music_infos.append(info)
                     music_diffs.append(diff)
+                    await scanner_logger.debug(f"Scanned music data: {file}")
                 except Exception as e:
                     await scanner_logger.error(f"[Music.xml error] {file}: {e}")
             elif file.suffix == ".c2s":
