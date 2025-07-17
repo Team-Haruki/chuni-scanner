@@ -117,6 +117,14 @@ async def option_ver(option_path: AsyncPath) -> str | None:
     except (configparser.Error, ValueError):
         return None
 
+async def iter_all_files(dir_path: AsyncPath):
+    async for entry in dir_path.iterdir():
+        if await entry.is_dir():
+            async for sub in iter_all_files(entry):
+                yield sub
+        else:
+            yield entry
+
 
 async def scan_music(
     a000_path: AsyncPath, options_dir: AsyncPath
@@ -137,7 +145,7 @@ async def scan_music(
     await scanner_logger.info("Validated option directories.")
     await scanner_logger.info("Scanning music data...")
     for valid_dir, opt_v in valid_dirs.items():
-        async for file in valid_dir.rglob("*"):
+        async for file in iter_all_files(valid_dir):
             if file.name == "Music.xml":
                 try:
                     info, diff = await asyncio.to_thread(parse_music_xml, file, opt_v)
