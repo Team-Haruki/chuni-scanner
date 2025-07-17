@@ -1,7 +1,7 @@
 [project]
 name = "chuni-scanner"
-version = "1.0.0"
-description = "Add your description here"
+version = "1.0.1"
+description = "A simple chunithm music data scanner"
 requires-python = ">=3.12"
 dependencies = [
     "aiopath>=0.7.7",
@@ -9,9 +9,10 @@ dependencies = [
     "coloredlogs>=15.0.1",
     "greenlet>=3.2.3",
     "pydantic>=2.11.7",
-    "ruff>=0.12.3",
+    "ruff>=0.12.4",
     "setuptools>=80.9.0",
     "sqlalchemy>=2.0.41",
+    "twine>=6.1.0",
     "wheel>=0.45.1",
 ]
 
