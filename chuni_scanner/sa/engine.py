@@ -73,14 +73,20 @@ class DatabaseEngine:
         if not pk_columns:
             raise ValueError("Model has no primary key defined")
         values_list = []
+        update_keys_list = []
         for instance in instances:
             values = {col.name: getattr(instance, col.name) for col in table.columns if hasattr(instance, col.name)}
             values_list.append(values)
+            update_keys_list.append([
+                k for k, v in values.items()
+                if k not in pk_columns and v is not None
+            ])
         async with self.session() as session:
             stmt = mysql_insert(table).values(values_list)
-            stmt = stmt.on_duplicate_key_update(
-                {k: stmt.inserted[k] for k in table.columns.keys() if k not in pk_columns}
-            )
+            common_update_keys = set.intersection(*map(set, update_keys_list))
+            stmt = stmt.on_duplicate_key_update({
+                k: stmt.inserted[k] for k in common_update_keys
+            })
             await session.execute(stmt)
             await session.commit()
             result_list = []

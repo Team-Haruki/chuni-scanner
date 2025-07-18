@@ -1,6 +1,6 @@
 [project]
 name = "chuni-scanner"
-version = "1.1.0"
+version = "1.1.1"
 description = "A simple chunithm music data scanner"
 requires-python = ">=3.12"
 dependencies = [
