@@ -15,6 +15,7 @@ from .sa.tables import ChunithmMusicDBBase, ChunithmMusic, ChunithmMusicDifficul
 engine: DatabaseEngine | None = None
 a000_path: AsyncPath | None = None
 options_dir: AsyncPath | None = None
+deleted_option_path: AsyncPath | None = None
 
 
 async def init(config_path: AsyncPath) -> None:
@@ -22,15 +23,24 @@ async def init(config_path: AsyncPath) -> None:
         await logger.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
-    global engine, a000_path, options_dir
+    global engine, a000_path, options_dir, deleted_option_path
     content = await config_path.read_text(encoding="utf-8")
     data = json.loads(content)
     try:
-        a000_path, options_dir = AsyncPath(data["a000_path"]), AsyncPath(data["options_dir"])
-        await logger.info("Loaded A000 and options directory configuration.")
+        a000_path, options_dir, deleted_option_path = (
+            data["a000_path"],
+            data["options_dir"],
+            data["deleted_option_path"],
+        )
+        a000_path, options_dir, deleted_option_path = (
+            AsyncPath(a000_path) if a000_path else None,
+            AsyncPath(data["options_dir"]) if options_dir else None,
+            AsyncPath(data["deleted_option_path"]) if deleted_option_path else None,
+        )
+        await logger.info("Loaded A000, options directory and deleted option configuration.")
     except Exception as e:
         traceback.print_exc()
-        await logger.error("Failed to load A000 and options directory configuration.")
+        await logger.error("Failed to load A000, options, deleted option directory configuration.")
         sys.exit(1)
     try:
         await logger.info("Initializing database engine...")
@@ -56,7 +66,7 @@ async def init(config_path: AsyncPath) -> None:
 
 
 async def update_database() -> None:
-    music_infos, music_diffs, chart_data = await scan_music(a000_path, options_dir)
+    music_infos, music_diffs, chart_data = await scan_music(a000_path, options_dir, deleted_option_path)
     music_infos = [ChunithmMusic(**(m.model_dump(exclude_none=True))) for m in music_infos]
     music_diffs = [ChunithmMusicDifficulty(**(m.model_dump(exclude_none=True))) for m in music_diffs]
     chart_data = [ChunithmChartData(**(m.model_dump(exclude_none=True))) for m in chart_data]

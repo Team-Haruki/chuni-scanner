@@ -23,7 +23,9 @@ c2s_mapping = {
 }
 
 
-def parse_music_xml(xml_path: AsyncPath, current_version: str) -> tuple[MusicInfoSchema, MusicDifficultySchema]:
+def parse_music_xml(
+    xml_path: AsyncPath, current_version: str, is_deleted: bool = False
+) -> tuple[MusicInfoSchema, MusicDifficultySchema]:
     tree = xmlEt.parse(Path(xml_path))
     root = tree.getroot()
 
@@ -69,12 +71,12 @@ def parse_music_xml(xml_path: AsyncPath, current_version: str) -> tuple[MusicInf
         category=category,
         version=release_version,
         release_date=release_date,
-        is_deleted=False,
+        is_deleted=is_deleted,
     )
 
     diff = MusicDifficultySchema(
         music_id=music_id,
-        version=current_version,
+        version=current_version if current_version != "0.00" else release_version,
         diff0_const=get_fumen_level_by_type_id(0),
         diff1_const=get_fumen_level_by_type_id(1),
         diff2_const=get_fumen_level_by_type_id(2),
@@ -109,7 +111,9 @@ async def c2s_analyzer(file_path: AsyncPath) -> ChartDataSchema:
     return ChartDataSchema(**data)
 
 
-async def option_ver(option_path: AsyncPath) -> str | None:
+async def option_ver(option_path: AsyncPath | None = None) -> str | None:
+    if not option_path:
+        return None
     config_path = option_path / "data.conf"
     if not await config_path.is_file():
         return None
@@ -137,7 +141,9 @@ async def iter_all_files(dir_path: AsyncPath):
 
 
 async def scan_music(
-    a000_path: AsyncPath, options_dir: AsyncPath
+    a000_path: AsyncPath | None = None,
+    options_dir: AsyncPath | None = None,
+    deleted_option_path: AsyncPath | None = None,
 ) -> tuple[list[MusicInfoSchema], list[MusicDifficultySchema], list[ChartDataSchema]]:
     valid_dirs: dict[AsyncPath:str] = {}
     music_infos: list[MusicInfoSchema] = []
@@ -147,11 +153,14 @@ async def scan_music(
     opt_v = await option_ver(a000_path)
     if opt_v:
         valid_dirs[a000_path] = opt_v
-    async for option_path in options_dir.iterdir():
-        if await option_path.is_dir():
-            opt_v = await option_ver(option_path)
-            if opt_v:
-                valid_dirs[option_path] = opt_v
+    if options_dir:
+        async for option_path in options_dir.iterdir():
+            if await option_path.is_dir():
+                opt_v = await option_ver(option_path)
+                if opt_v:
+                    valid_dirs[option_path] = opt_v
+    if deleted_option_path:
+        valid_dirs[deleted_option_path] = "0.00"
     await scanner_logger.info("Validated option directories.")
     await scanner_logger.info("Scanning music data...")
     xml_tasks = []
@@ -160,14 +169,15 @@ async def scan_music(
     for valid_dir, opt_v in valid_dirs.items():
         async for file in iter_all_files(valid_dir):
             if file.name == "Music.xml":
-                xml_file_infos.append((file, opt_v))
+                is_deleted = valid_dir == deleted_option_path
+                xml_file_infos.append((file, opt_v, is_deleted))
             elif file.suffix == ".c2s":
                 c2s_tasks.append(c2s_analyzer(file))
-    for file, opt_v in xml_file_infos:
-        xml_tasks.append(asyncio.to_thread(parse_music_xml, file, opt_v))
+    for file, opt_v, is_deleted in xml_file_infos:
+        xml_tasks.append(asyncio.to_thread(parse_music_xml, file, opt_v, is_deleted))
     results = await asyncio.gather(*xml_tasks, return_exceptions=True)
     for i, result in enumerate(results):
-        file, _ = xml_file_infos[i]
+        file, _, _ = xml_file_infos[i]
         if isinstance(result, Exception):
             await scanner_logger.error(f"[Music.xml error] {file}: {result}")
         else:
