@@ -1,15 +1,15 @@
-import re
 import asyncio
 import configparser
-from typing import Any
+from datetime import date, datetime
 from pathlib import Path
-
-from aiopath import AsyncPath
-from datetime import datetime, date
+import re
+from typing import Any
 import xml.etree.ElementTree as xmlEt
 
+from aiopath import AsyncPath
+
 from .logger import scanner_logger
-from .schemas import MusicDifficultySchema, MusicInfoSchema, ChartDataSchema
+from .schemas import ChartDataSchema, MusicDifficultySchema, MusicInfoSchema
 
 c2s_mapping = {
     "CREATOR": "creator",
@@ -107,7 +107,7 @@ async def c2s_analyzer(file_path: AsyncPath) -> ChartDataSchema:
                     data[field] = float(value.split()[0])
                 else:
                     data[field] = value
-    await scanner_logger.debug(f"Scanned c2s data: {str(file_path)}")
+    await scanner_logger.debug(f"Scanned c2s data: {file_path!s}")
     return ChartDataSchema(**data)
 
 

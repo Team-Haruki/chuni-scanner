@@ -1,13 +1,13 @@
-from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
-    Float,
-    Date,
     CheckConstraint,
+    Column,
+    Date,
+    Float,
+    Integer,
     Numeric,
+    String,
 )
+from sqlalchemy.orm import DeclarativeBase
 
 
 class ChunithmMusicDBBase(DeclarativeBase):

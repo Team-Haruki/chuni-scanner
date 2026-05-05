@@ -1,18 +1,18 @@
-from sqlalchemy import select
-from sqlalchemy.inspection import inspect
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
-from typing import Union, List, Type, TypeVar, Sequence
-from sqlalchemy.dialects.mysql import insert as mysql_insert
-from sqlalchemy.orm import InstrumentedAttribute, DeclarativeBase
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from typing import TypeVar
 
+from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
 
 T = TypeVar("T")
 
 
 class DatabaseEngine:
-    def __init__(self, url_scheme, table_base: Type[DeclarativeBase]) -> None:
+    def __init__(self, url_scheme, table_base: type[DeclarativeBase]) -> None:
         self._engine = create_async_engine(url_scheme, echo=False, future=True)
         self._session_maker = async_sessionmaker(self._engine, expire_on_commit=False)
         self._table_base = table_base
@@ -31,10 +31,10 @@ class DatabaseEngine:
 
     async def select(
         self,
-        target: Union[Type[T], InstrumentedAttribute],
+        target: type[T] | InstrumentedAttribute,
         *conditions,
         one_result: bool = False,
-    ) -> Union[T, List[T]] | None:
+    ) -> T | list[T] | None:
         async with self.session() as session:
             stmt = select(target)
             if conditions:
@@ -77,16 +77,11 @@ class DatabaseEngine:
         for instance in instances:
             values = {col.name: getattr(instance, col.name) for col in table.columns if hasattr(instance, col.name)}
             values_list.append(values)
-            update_keys_list.append([
-                k for k, v in values.items()
-                if k not in pk_columns and v is not None
-            ])
+            update_keys_list.append([k for k, v in values.items() if k not in pk_columns and v is not None])
         async with self.session() as session:
             stmt = mysql_insert(table).values(values_list)
             common_update_keys = set.intersection(*map(set, update_keys_list))
-            stmt = stmt.on_duplicate_key_update({
-                k: stmt.inserted[k] for k in common_update_keys
-            })
+            stmt = stmt.on_duplicate_key_update({k: stmt.inserted[k] for k in common_update_keys})
             await session.execute(stmt)
             await session.commit()
             result_list = []

@@ -1,16 +1,16 @@
-import sys
-import json
-import asyncio
 import argparse
+import asyncio
+import json
+import sys
 import traceback
 
 from aiopath import AsyncPath
 
-from .scanner import scan_music
+from .logger import main_logger as logger
+from .logger import scanner_logger
 from .sa.engine import DatabaseEngine
-from .logger import main_logger as logger, scanner_logger
-from .sa.tables import ChunithmMusicDBBase, ChunithmMusic, ChunithmMusicDifficulty, ChunithmChartData
-
+from .sa.tables import ChunithmChartData, ChunithmMusic, ChunithmMusicDBBase, ChunithmMusicDifficulty
+from .scanner import scan_music
 
 engine: DatabaseEngine | None = None
 a000_path: AsyncPath | None = None
@@ -38,7 +38,7 @@ async def init(config_path: AsyncPath) -> None:
             AsyncPath(data["deleted_option_path"]) if deleted_option_path else None,
         )
         await logger.info("Loaded A000, options directory and deleted option configuration.")
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         await logger.error("Failed to load A000, options, deleted option directory configuration.")
         sys.exit(1)
@@ -52,14 +52,12 @@ async def init(config_path: AsyncPath) -> None:
             data["database"],
         )
         engine = DatabaseEngine(
-            url_scheme="mysql+asyncmy://{user}:{password}@{host}:{port}/{database}".format(
-                user=db_user, password=db_pass, host=db_host, port=db_port, database=db_name
-            ),
+            url_scheme=f"mysql+asyncmy://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}",
             table_base=ChunithmMusicDBBase,
         )
         await engine.init_engine()
         await logger.info("Initialized database engine.")
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         await logger.error("Failed to initialize database engine.")
         sys.exit(1)

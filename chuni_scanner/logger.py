@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 import coloredlogs
 
 LOG_FORMAT = "[%(asctime)s][%(levelname)s][%(name)s] %(message)s"
@@ -11,7 +12,7 @@ FIELD_STYLE = {
 }
 
 
-class AsyncLogger(object):
+class AsyncLogger:
     def __init__(self, name: str = "async-logger", level: str = "INFO", queue_size: int = 1000) -> None:
         self._sync_logger = logging.getLogger(f"{name}-sync")
         coloredlogs.install(level=level, logger=self._sync_logger, fmt=LOG_FORMAT, field_styles=FIELD_STYLE)
